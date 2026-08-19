@@ -644,7 +644,7 @@ if __name__ == "__main__":
         else "/home/sadhika8/JupyterLinks/nobackup/quads_results"
     ).expanduser()
 
-    model = input("Enter model name (e.g. geosfp): ").strip()
+    model = input("Enter model name (e.g. geosfp, geosit, geoscf, merra2): ").strip()
     date_str = input("Enter date (YYYY-MM-DD, e.g. 2024-02-01): ").strip()
 
     try:
@@ -658,8 +658,8 @@ if __name__ == "__main__":
     day = f"{parsed_date.day:02d}"
 
     root = base_root / model.upper() / year / month / day
-    print("root:", root)
-
+    #print("root:", root)
+    print("Opening Quads TUI")
     app = QuadsViewer(
         root=root,
         model=model,
