@@ -125,6 +125,16 @@ class QuadsViewer(App):
         padding: 1;
     }
 
+    #nan_title {
+        height: 1;
+        padding: 0 1;
+    }
+
+    #nan_table {
+        height: 8;
+        border: solid white;
+    }
+
     #row_summary {
         height: 13;
         border: solid yellow;
@@ -196,6 +206,9 @@ class QuadsViewer(App):
     ]
     MAX_RAW_ROWS = 1000
 
+    NAN_COLUMNS = ["Collection", "NaN Count"]
+    NAN_CSV_FILENAME = "nan_count_by_collection.csv"
+
     @dataclass
     class PickleLoaded(Message):
         path: Path
@@ -230,6 +243,11 @@ class QuadsViewer(App):
 
         with Vertical(id="right"):
             yield Static("Loading .pkl file", id="file_summary")
+            yield Static(
+                "NaN counts by collection (nonzero, sorted descending)",
+                id="nan_title",
+            )
+            yield DataTable(id="nan_table")
             yield DataTable(id="preview")
             yield Static("Select a row to summarize and plot", id="row_summary")
             with Horizontal(id="bottom_area"):
@@ -253,11 +271,17 @@ class QuadsViewer(App):
         raw_table.zebra_stripes = True
         raw_table.add_columns(*self.RAW_COLUMNS)
 
+        nan_table = self.query_one("#nan_table", DataTable)
+        nan_table.cursor_type = "row"
+        nan_table.zebra_stripes = True
+
         self.reload_file_list()
+        self.load_nan_counts()
         self.query_one("#plot_right", QuantilePlot).show_message("Select a file")
 
     def action_reload_files(self) -> None:
         self.reload_file_list()
+        self.load_nan_counts()
 
     def action_focus_table(self) -> None:
         self.query_one("#preview", DataTable).focus()
@@ -321,6 +345,40 @@ class QuadsViewer(App):
             self.query_one("#row_summary", Static).update("No pickle files found")
             self.query_one("#plot_right", QuantilePlot).show_message("No pickle files found")
             self.clear_raw_table()
+
+    def load_nan_counts(self) -> None:
+        table = self.query_one("#nan_table", DataTable)
+        table.clear(columns=True)
+        table.add_columns(*self.NAN_COLUMNS)
+
+        csv_path = self.root / self.NAN_CSV_FILENAME
+
+        if not csv_path.exists():
+            self.notify(
+                f"{csv_path} not found; NaN counts panel left empty.",
+                severity="warning",
+            )
+            return
+
+        try:
+            nan_df = pd.read_csv(csv_path)
+        except Exception as e:
+            self.notify(f"Failed to read {csv_path}: {e}", severity="error")
+            return
+
+        if "collection" not in nan_df.columns or "no_of_nans" not in nan_df.columns:
+            self.notify(
+                f"{csv_path} must have 'collection' and 'no_of_nans' columns.",
+                severity="error",
+            )
+            return
+
+        nonzero = nan_df[nan_df["no_of_nans"] != 0].sort_values(
+            by="no_of_nans", ascending=False
+        )
+
+        for _, row in nonzero.iterrows():
+            table.add_row(str(row["collection"]), f"{int(row['no_of_nans']):,}")
 
     @work(thread=True, exclusive=True)
     def load_pickle(self, path: Path) -> None:
