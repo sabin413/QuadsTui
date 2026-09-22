@@ -14,7 +14,7 @@ from textual import on, work
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.message import Message
-from textual.widgets import DataTable, Footer, Header, Static
+from textual.widgets import DataTable, Header, Static
 from textual_plotext import PlotextPlot
 
 
@@ -67,6 +67,8 @@ def to_1d_float_list(value: Any) -> list[float]:
 
 
 class QuantilePlot(PlotextPlot):
+    FENCE_X = [i / 20 for i in range(21)]  # 0.00, 0.05, ..., 1.00 - sparse points give fences a dotted look
+
     def on_mount(self) -> None:
         self.plt.title("Quantile plot")
         self.plt.grid(True, True)
@@ -99,12 +101,13 @@ class QuantilePlot(PlotextPlot):
             return
 
         self.plt.title(title)
+        self.plt.xlim(0, 1)
         self.plt.plot(x_vals, y_vals)
 
         if fence_low is not None:
-            self.plt.plot(x_vals, [fence_low] * len(x_vals))
+            self.plt.scatter(self.FENCE_X, [fence_low] * len(self.FENCE_X))
         if fence_high is not None:
-            self.plt.plot(x_vals, [fence_high] * len(x_vals))
+            self.plt.scatter(self.FENCE_X, [fence_high] * len(self.FENCE_X))
 
         self.refresh()
 
@@ -173,10 +176,7 @@ class QuadsViewer(App):
 
     BINDINGS = [
         ("q", "quit", "Quit"),
-        ("r", "reload_files", "Reload files"),
-        ("enter", "activate_current", "Select"),
-        ("t", "focus_table", "Preview Table"),
-        ("d", "focus_raw_table", "Raw Data"),
+        ("t", "switch_table", "Switch tables"),
         ("s", "save_raw_data", "Save raw data"),
     ]
 
@@ -208,6 +208,8 @@ class QuadsViewer(App):
 
     NAN_COLUMNS = ["Collection", "NaN Count"]
     NAN_CSV_FILENAME = "nan_count_by_collection.csv"
+
+    TABLE_IDS = ["nan_table", "preview", "raw_table"]
 
     @dataclass
     class PickleLoaded(Message):
@@ -259,8 +261,6 @@ class QuadsViewer(App):
                     )
                     yield DataTable(id="raw_table")
 
-        yield Footer()
-
     def on_mount(self) -> None:
         preview = self.query_one("#preview", DataTable)
         preview.cursor_type = "row"
@@ -279,27 +279,12 @@ class QuadsViewer(App):
         self.load_nan_counts()
         self.query_one("#plot_right", QuantilePlot).show_message("Select a file")
 
-    def action_reload_files(self) -> None:
-        self.reload_file_list()
-        self.load_nan_counts()
-
-    def action_focus_table(self) -> None:
-        self.query_one("#preview", DataTable).focus()
-
-    def action_focus_raw_table(self) -> None:
-        self.query_one("#raw_table", DataTable).focus()
-
-    def action_activate_current(self) -> None:
+    def action_switch_table(self) -> None:
+        tables = [self.query_one(f"#{table_id}", DataTable) for table_id in self.TABLE_IDS]
         focused = self.focused
 
-        if focused is None:
-            return
-
-        if focused.id == "preview":
-            table = self.query_one("#preview", DataTable)
-            row_idx = table.cursor_row
-            if row_idx is not None and row_idx >= 0:
-                self.update_selected_row(row_idx)
+        next_index = (tables.index(focused) + 1) % len(tables) if focused in tables else 0
+        tables[next_index].focus()
 
     def action_save_raw_data(self) -> None:
         if self.current_path is None:
@@ -336,7 +321,7 @@ class QuadsViewer(App):
             f"Found {len(self.files)} matching pickle files\n"
             f"Model: {self.model.upper()}\n"
             f"Date: {self.date_str}\n\n"
-            f"Press 't' for preview table, 'd' for raw data table, 's' to save raw data."
+            f"Press 't' to switch tables, 's' to save raw data, and 'q' to quit."
         )
 
         if self.files:
@@ -455,16 +440,13 @@ class QuadsViewer(App):
         total_right = int(self.df["no_of_violations_right"].sum())
         total_total = int(self.df["no_of_total_violations"].sum())
         nonzero_rows = int((self.df["no_of_total_violations"] != 0).sum())
-        raw_data_file = self.parquet_path.name if self.parquet_path is not None else "Not found"
 
         text = (
             f"Model: {model}, Date: {date}\n"
-            f"Loaded summary file: {self.current_path.name}\n"
-            f"Loaded raw data file: {raw_data_file}\n"
             f"Violations below lower T-digest fence: {total_left:,}\n"
             f"Violations above upper T-digest fence: {total_right:,}\n"
             f"Total violations: {total_total:,} across {nonzero_rows:,} data slices (identified by id_strings)\n"
-            f"\nPress 't' for preview table, 'd' for raw data table, 's' to save raw data."
+            f"\nPress 't' to switch tables, 's' to save raw data, and 'q' to quit."
         )
         self.query_one("#file_summary", Static).update(text)
 
