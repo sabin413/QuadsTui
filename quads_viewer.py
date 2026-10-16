@@ -397,6 +397,10 @@ class QuadsViewer(App):
                 )
                 return
 
+            # Drop slices with a missing or zero-width T-digest fence
+            obj = obj.dropna(subset=["fence_low", "fence_high"])
+            obj = obj[obj["fence_low"] != obj["fence_high"]]
+
             self.post_message(self.PickleLoaded(path=path, df=obj))
 
         except Exception as e:
