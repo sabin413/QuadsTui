@@ -25,6 +25,12 @@ PARQUET_RE = re.compile(
     r"^quads_results_(?P<model>.+?)_(?P<date>\d{4}_\d{2}_\d{2})_violations_raw_data\.parquet$"
 )
 
+# Variables hidden from display for GEOSFP within this date window (inclusive)
+SCREENED_MODEL = "geosfp"
+SCREEN_START = datetime(2026, 2, 1)
+SCREEN_END = datetime(2029, 2, 28)
+SCREENED_VARIABLES = {"MFXC", "TPRECMAX", "MFZ"}
+
 
 def shorten(value: Any, width: int = 60) -> str:
     text = str(value)
@@ -38,6 +44,15 @@ def historical_reference_window(date_str: str) -> str:
     start = dt - relativedelta(years=1, months=1)
     end = dt - relativedelta(years=1) + relativedelta(months=1)
     return f"{start:%Y-%m} to {end:%Y-%m}"
+
+
+def screen_variables(df: pd.DataFrame, model: str, date_str: str) -> pd.DataFrame:
+    if model.lower() != SCREENED_MODEL:
+        return df
+    if not (SCREEN_START <= datetime.strptime(date_str, "%Y-%m-%d") <= SCREEN_END):
+        return df
+    variable = df["id_string"].astype(str).str.split("|").str[1].str.strip()
+    return df[~variable.isin(SCREENED_VARIABLES)]
 
 
 def to_1d_float_list(value: Any) -> list[float]:
@@ -390,7 +405,7 @@ class QuadsViewer(App):
     @on(PickleLoaded)
     def handle_pickle_loaded(self, event: PickleLoaded) -> None:
         self.current_path = event.path
-        self.df = event.df
+        self.df = screen_variables(event.df, self.model, self.date_str)
         self.view_df = None
         self.current_id_string = None
 
